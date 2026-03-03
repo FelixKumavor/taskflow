@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -11,50 +11,65 @@ export default function Register() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const [localError, setLocalError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { register, isAuthenticated, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
+
+  // Redirect to dashboard if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      setLocation("/dashboard");
+    }
+  }, [isAuthenticated, authLoading, setLocation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
+    setLocalError("");
+    setIsSubmitting(true);
 
     try {
-      // Basic validation
+      // Validation
       if (!email || !name || !password || !confirmPassword) {
-        setError("Please fill in all fields");
-        setLoading(false);
+        setLocalError("Please fill in all fields");
+        setIsSubmitting(false);
         return;
       }
 
       if (!email.includes("@")) {
-        setError("Please enter a valid email address");
-        setLoading(false);
+        setLocalError("Please enter a valid email address");
+        setIsSubmitting(false);
         return;
       }
 
       if (password.length < 6) {
-        setError("Password must be at least 6 characters");
-        setLoading(false);
+        setLocalError("Password must be at least 6 characters");
+        setIsSubmitting(false);
         return;
       }
 
       if (password !== confirmPassword) {
-        setError("Passwords do not match");
-        setLoading(false);
+        setLocalError("Passwords do not match");
+        setIsSubmitting(false);
         return;
       }
 
+      // Attempt registration
       await register(email, name, password);
-      setLocation("/dashboard");
+      // Navigation happens via useEffect when isAuthenticated changes
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
-    } finally {
-      setLoading(false);
+      setLocalError(err instanceof Error ? err.message : "Registration failed");
+      setIsSubmitting(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
@@ -65,9 +80,9 @@ export default function Register() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
+            {localError && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-                {error}
+                {localError}
               </div>
             )}
 
@@ -81,7 +96,7 @@ export default function Register() {
                 placeholder="John Doe"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                disabled={loading}
+                disabled={isSubmitting}
                 required
               />
             </div>
@@ -96,7 +111,7 @@ export default function Register() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
+                disabled={isSubmitting}
                 required
               />
             </div>
@@ -111,7 +126,7 @@ export default function Register() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
+                disabled={isSubmitting}
                 required
               />
               <p className="text-xs text-slate-500">At least 6 characters</p>
@@ -127,7 +142,7 @@ export default function Register() {
                 placeholder="••••••••"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={loading}
+                disabled={isSubmitting}
                 required
               />
             </div>
@@ -135,9 +150,9 @@ export default function Register() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading}
+              disabled={isSubmitting}
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating account...

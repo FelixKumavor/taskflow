@@ -17,10 +17,10 @@ interface Task {
 }
 
 export default function Dashboard() {
-  const { user, logout, token } = useAuth();
+  const { user, logout, token, loading: authLoading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasksLoading, setTasksLoading] = useState(true);
   const [error, setError] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDescription, setNewTaskDescription] = useState("");
@@ -29,19 +29,21 @@ export default function Dashboard() {
   const [editDescription, setEditDescription] = useState("");
   const [editStatus, setEditStatus] = useState<"pending" | "in-progress" | "completed">("pending");
 
-  // Redirect if not authenticated
+  // Redirect if not authenticated after auth loading completes
   useEffect(() => {
-    if (!user || !token) {
+    if (!authLoading && !isAuthenticated) {
       setLocation("/login");
     }
-  }, [user, token, setLocation]);
+  }, [isAuthenticated, authLoading, setLocation]);
 
-  // Load tasks
+  // Load tasks when authenticated
   useEffect(() => {
-    if (!token) return;
+    if (!isAuthenticated || !token || authLoading) {
+      return;
+    }
 
     const fetchTasks = async () => {
-      setLoading(true);
+      setTasksLoading(true);
       setError("");
       try {
         const response = await fetch("/api/trpc/tasks.list", {
@@ -59,12 +61,12 @@ export default function Dashboard() {
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tasks");
       } finally {
-        setLoading(false);
+        setTasksLoading(false);
       }
     };
 
     fetchTasks();
-  }, [token]);
+  }, [token, isAuthenticated, authLoading]);
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,13 +165,30 @@ export default function Dashboard() {
           ? "in-progress"
           : "completed";
 
-    await handleUpdateTask(task.id);
-    // Update local state immediately
-    setTasks(
-      tasks.map((t) =>
-        t.id === task.id ? { ...t, status: newStatus } : t
-      )
-    );
+    try {
+      const response = await fetch("/api/trpc/tasks.update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          json: {
+            id: task.id,
+            status: newStatus,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update task");
+      }
+
+      const data = await response.json();
+      setTasks(tasks.map((t) => (t.id === task.id ? data.result.data : t)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update task");
+    }
   };
 
   const startEdit = (task: Task) => {
@@ -190,7 +209,17 @@ export default function Dashboard() {
     }
   };
 
-  if (!user) {
+  // Show loading state while auth is being initialized
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  // Show nothing while redirecting
+  if (!isAuthenticated || !user) {
     return null;
   }
 
@@ -269,7 +298,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-slate-900">Your Tasks</h2>
 
-          {loading ? (
+          {tasksLoading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
             </div>

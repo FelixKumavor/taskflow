@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, InsertTask, users, tasks } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,148 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+/**
+ * Get user by email for password-based authentication.
+ */
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get user: database not available");
+    return undefined;
+  }
+
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Get user by ID.
+ */
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get user: database not available");
+    return undefined;
+  }
+
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Create a new user with email and password hash.
+ */
+export async function createUser(email: string, name: string, passwordHash: string) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  const result = await db.insert(users).values({
+    email,
+    name,
+    passwordHash,
+    loginMethod: "email",
+    role: "user",
+  });
+
+  return result;
+}
+
+/**
+ * Get all tasks for a specific user.
+ */
+export async function getUserTasks(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get tasks: database not available");
+    return [];
+  }
+
+  return await db.select().from(tasks).where(eq(tasks.userId, userId));
+}
+
+/**
+ * Get a single task by ID and verify user ownership.
+ */
+export async function getTaskById(taskId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get task: database not available");
+    return undefined;
+  }
+
+  const result = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, userId)))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Create a new task for a user.
+ */
+export async function createTask(userId: number, title: string, description: string | null = null) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  const result = await db.insert(tasks).values({
+    userId,
+    title,
+    description,
+    status: "pending",
+  });
+
+  return result;
+}
+
+/**
+ * Update a task (with user ownership validation).
+ */
+export async function updateTask(
+  taskId: number,
+  userId: number,
+  updates: { title?: string; description?: string; status?: "pending" | "in-progress" | "completed" }
+) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  // Verify ownership
+  const task = await getTaskById(taskId, userId);
+  if (!task) {
+    return null; // Task not found or user doesn't own it
+  }
+
+  const result = await db
+    .update(tasks)
+    .set(updates)
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, userId)));
+
+  return result;
+}
+
+/**
+ * Delete a task (with user ownership validation).
+ */
+export async function deleteTask(taskId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  // Verify ownership
+  const task = await getTaskById(taskId, userId);
+  if (!task) {
+    return null; // Task not found or user doesn't own it
+  }
+
+  const result = await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, userId)));
+
+  return result;
+}
